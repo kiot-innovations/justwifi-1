@@ -209,7 +209,7 @@ class JustWifi {
         uint8_t _doScan();
         uint8_t _doSTA(uint8_t id = 0xFF);
 
-        void _disable();
+        void _disable(bool force);
         void _machine();
         uint8_t _populate(uint8_t networkCount);
         uint8_t _sortByRSSI();

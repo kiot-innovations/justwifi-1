@@ -60,16 +60,17 @@ JustWifi::~JustWifi() {
 // PRIVATE METHODS
 //------------------------------------------------------------------------------
 
-void JustWifi::_disable() {
+void JustWifi::_disable(bool force) {
 
     // See https://github.com/esp8266/Arduino/issues/2186
-    if (strncmp_P(ESP.getSdkVersion(), PSTR("1.5.3"), 5) == 0) {
+    if (force || strncmp_P(ESP.getSdkVersion(), PSTR("1.5.3"), 5) == 0) {
         if ((WiFi.getMode() & WIFI_AP) > 0) {
             WiFi.mode(WIFI_OFF);
-            delay(10);
+            delay(200);
             WiFi.enableAP(true);
         } else {
             WiFi.mode(WIFI_OFF);
+            delay(200);
         }
 
     }
@@ -222,9 +223,10 @@ uint8_t JustWifi::_doSTA(uint8_t id) {
 
     // No state or previous network failed
     if (RESPONSE_START == state) {
-
+        // Due to this wierd issue https://github.com/kiot-innovations/justwifi/issues/1 , temporay we have to disable this, it can also lead to bad issues like bricking of the device sometimes. 
         WiFi.persistent(false);
-        _disable();
+        // See the issue https://github.com/kiot-innovations/justwifi/issues/1
+        _disable(true);
         WiFi.enableSTA(true);
         WiFi.hostname(_hostname);
 
@@ -418,6 +420,10 @@ String JustWifi::_MAC2String(const unsigned char* mac) {
     );
     return String(buffer);
 }
+
+// void JustWifi::_overRideConnecting(bool connecting){
+//     _connecting = connecting;
+// }
 
 void JustWifi::_machine() {
 
@@ -839,7 +845,8 @@ bool JustWifi::connectable() {
 void JustWifi::disconnect() {
     _timeout = 0;
     WiFi.disconnect();
-    WiFi.enableSTA(false);
+    // _overRideConnecting(false);
+    WiFi.enableSTA(false); // TODO: Need to check the effect of this function
     _doCallback(MESSAGE_DISCONNECTED);
 }
 
@@ -847,6 +854,7 @@ void JustWifi::turnOff() {
     WiFi.disconnect();
     WiFi.enableAP(false);
     WiFi.enableSTA(false);
+    WiFi.mode(WIFI_OFF);
     WiFi.forceSleepBegin();
     delay(1);
     _doCallback(MESSAGE_TURNING_OFF);
@@ -860,6 +868,7 @@ void JustWifi::turnOn() {
     setReconnectTimeout(0);
     _doCallback(MESSAGE_TURNING_ON);
     WiFi.enableSTA(true);
+    WiFi.mode(WIFI_STA);
     _sta_enabled = true;
     _state = STATE_IDLE;
 }
