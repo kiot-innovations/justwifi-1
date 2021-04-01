@@ -44,7 +44,7 @@ extern "C" {
 
 #define DEFAULT_CONNECT_TIMEOUT         10000
 #define DEFAULT_RECONNECT_INTERVAL      60000
-#define JUSTWIFI_SMARTCONFIG_TIMEOUT    60000
+#define JUSTWIFI_SMARTCONFIG_TIMEOUT    300000 // 5 Minutes
 
 #ifdef DEBUG_ESP_WIFI
 #ifdef DEBUG_ESP_PORT
@@ -90,7 +90,8 @@ typedef enum {
     STATE_SMARTCONFIG_ONGOING,
     STATE_SMARTCONFIG_FAILED,
     STATE_SMARTCONFIG_SUCCESS,
-    STATE_FALLBACK
+    STATE_FALLBACK,
+    STATE_FALLBACK_NO_NETWORK
 } justwifi_states_t;
 
 typedef enum {
@@ -175,6 +176,7 @@ class JustWifi {
         void enableSTA(bool enabled);
         void enableAP(bool enabled);
         void enableAPFallback(bool enabled);
+        void enableAPFallbackNonetwork(bool enable);
 
         #if defined(JUSTWIFI_ENABLE_WPS)
             void startWPS();
@@ -204,6 +206,7 @@ class JustWifi {
         bool _sta_enabled = true;
         bool _ap_connected = false;
         bool _ap_fallback_enabled = true;
+        bool _ap_fallback_no_network_enabled = false;
 
         bool _doAP();
         uint8_t _doScan();

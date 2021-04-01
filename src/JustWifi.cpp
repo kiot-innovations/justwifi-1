@@ -223,6 +223,7 @@ uint8_t JustWifi::_doSTA(uint8_t id) {
 
     // No state or previous network failed
     if (RESPONSE_START == state) {
+        // Serial.println("[DEBUGGG] doSta has been called");
         // Due to this wierd issue https://github.com/kiot-innovations/justwifi/issues/1 , temporay we have to disable this, it can also lead to bad issues like bricking of the device sometimes. 
         WiFi.persistent(false);
         // See the issue https://github.com/kiot-innovations/justwifi/issues/1
@@ -331,9 +332,15 @@ bool JustWifi::_doAP() {
     }
 
     _doCallback(MESSAGE_ACCESSPOINT_CREATING);
-
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        WiFi.mode(WIFI_AP_STA);
+    } else {
+        WiFi.mode(WIFI_AP);
+    }
+    
     WiFi.enableAP(true);
-
+    
     // Configure static options
     if (_softap.dhcp) {
         WiFi.softAPConfig(_softap.ip, _softap.gw, _softap.netmask);
@@ -359,6 +366,7 @@ uint8_t JustWifi::_doScan() {
     // If not scanning, start scan
     if (false == scanning) {
         WiFi.disconnect();
+        // Serial.println("[DEBUGGG] DoScan has beed called");
         WiFi.enableSTA(true);
         WiFi.scanNetworks(true, true);
         _doCallback(MESSAGE_SCANNING);
@@ -450,6 +458,10 @@ void JustWifi::_machine() {
                             _currentID = 0;
                             _state = _scan ? STATE_SCAN_START : STATE_STA_START;
                             return;
+                        }
+                    }else{
+                        if(!_ap_connected && _ap_fallback_no_network_enabled){
+                            _state = STATE_FALLBACK_NO_NETWORK;
                         }
                     }
                 }
@@ -633,6 +645,11 @@ void JustWifi::_machine() {
 
         case STATE_FALLBACK:
             if (!_ap_connected & _ap_fallback_enabled) _doAP();
+            _timeout = millis();
+            _state = STATE_IDLE;
+            break;
+        case STATE_FALLBACK_NO_NETWORK:
+            if(!_ap_connected) _doAP();
             _timeout = millis();
             _state = STATE_IDLE;
             break;
@@ -847,6 +864,7 @@ void JustWifi::disconnect() {
     WiFi.disconnect();
     // _overRideConnecting(false);
     WiFi.enableSTA(false); // TODO: Need to check the effect of this function
+     _state = STATE_IDLE;
     _doCallback(MESSAGE_DISCONNECTED);
 }
 
@@ -902,6 +920,10 @@ void JustWifi::enableAP(bool enabled) {
 
 void JustWifi::enableAPFallback(bool enabled) {
     _ap_fallback_enabled = enabled;
+}
+
+void JustWifi::enableAPFallbackNonetwork(bool enabled) {
+    _ap_fallback_no_network_enabled = enabled;
 }
 
 
