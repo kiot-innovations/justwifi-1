@@ -184,6 +184,9 @@ class JustWifi {
 
         #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
             void startSmartConfig();
+            #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
+            void startSmartConfig(sc_callback_t callback);
+            #endif
         #endif
 
         void loop();
@@ -220,7 +223,7 @@ class JustWifi {
         String _encodingString(uint8_t security);
         void _doCallback(justwifi_messages_t message, char * parameter = NULL);
         #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
-        #if SMARTCONFIG_CALLBACK_SUPPORT
+        #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
         sc_callback_t smartConfigCallback;
         #endif
         #endif

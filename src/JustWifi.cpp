@@ -610,7 +610,7 @@ void JustWifi::_machine() {
 
                 bool success = false;
                 
-                #if SMARTCONFIG_CALLBACK_SUPPORT
+                #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
                 if(smartConfigCallback){   
                     success = WiFi.beginSmartConfig(smartConfigCallback);
                 }else
@@ -910,7 +910,7 @@ void JustWifi::startWPS() {
 
 #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
 
-#if SMARTCONFIG_CALLBACK_SUPPORT
+#if defined(SMARTCONFIG_CALLBACK_SUPPORT)
 void JustWifi::startSmartConfig(sc_callback_t callback) {
     smartConfigCallback = callback;
     startSmartConfig();
