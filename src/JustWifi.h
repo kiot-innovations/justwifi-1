@@ -219,6 +219,11 @@ class JustWifi {
         String _MAC2String(const unsigned char* mac);
         String _encodingString(uint8_t security);
         void _doCallback(justwifi_messages_t message, char * parameter = NULL);
+        #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
+        #if SMARTCONFIG_CALLBACK_SUPPORT
+        sc_callback_t smartConfigCallback;
+        #endif
+        #endif
 
 };
 

@@ -603,19 +603,30 @@ void JustWifi::_machine() {
         #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
 
         case STATE_SMARTCONFIG_START:
+            {
+                _doCallback(MESSAGE_SMARTCONFIG_START);
 
-            _doCallback(MESSAGE_SMARTCONFIG_START);
+                enableAP(false);
 
-            enableAP(false);
+                bool success = false;
+                
+                #if SMARTCONFIG_CALLBACK_SUPPORT
+                if(smartConfigCallback){   
+                    success = WiFi.beginSmartConfig(smartConfigCallback);
+                }else
+                #endif
 
-            if (!WiFi.beginSmartConfig()) {
-                _state = STATE_SMARTCONFIG_FAILED;
-                return;
+                {
+                    success = WiFi.beginSmartConfig();
+                }
+                if (!success) {
+                    _state = STATE_SMARTCONFIG_FAILED;
+                    return;
+                }
+
+                _state = STATE_SMARTCONFIG_ONGOING;
+                _start = millis();
             }
-
-            _state = STATE_SMARTCONFIG_ONGOING;
-            _start = millis();
-
             break;
 
         case STATE_SMARTCONFIG_ONGOING:
@@ -898,6 +909,14 @@ void JustWifi::startWPS() {
 #endif // defined(JUSTWIFI_ENABLE_WPS)
 
 #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
+
+#if SMARTCONFIG_CALLBACK_SUPPORT
+void JustWifi::startSmartConfig(sc_callback_t callback) {
+    smartConfigCallback = callback;
+    startSmartConfig();
+}
+#endif
+
 void JustWifi::startSmartConfig() {
     _state = STATE_SMARTCONFIG_START;
 }
