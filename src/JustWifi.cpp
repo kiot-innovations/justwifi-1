@@ -92,6 +92,19 @@ void JustWifi::startSmartConfig() {
 }
 
 #endif // defined(JUSTWIFI_ENABLE_SMARTCONFIG)
+void JustWifi::_disable(bool force) {
+
+    // See https://github.com/esp8266/Arduino/issues/2186
+    if (force || strncmp_P(ESP.getSdkVersion(), PSTR("1.5.3"), 5) == 0) {
+        if ((WiFi.getMode() & WIFI_AP) > 0) {
+            WiFi.mode(WIFI_OFF);
+            delay(200);
+            WiFi.enableAP(true);
+        } else {
+            WiFi.mode(WIFI_OFF);
+            delay(200);
+        }
+
 
 //------------------------------------------------------------------------------
 // SCAN
@@ -342,10 +355,11 @@ uint8_t JustWifi::_doSTA(uint8_t id) {
 
     // No state or previous network failed
     if (RESPONSE_START == state) {
-
-        // Init some values
+        // Serial.println("[DEBUGGG] doSta has been called");
+        // Due to this wierd issue https://github.com/kiot-innovations/justwifi/issues/1 , temporay we have to disable this, it can also lead to bad issues like bricking of the device sometimes. 
         WiFi.persistent(false);
-        _esp8266_153_reset();
+        // See the issue https://github.com/kiot-innovations/justwifi/issues/1
+        _disable(true);
         WiFi.enableSTA(true);
 
         // Configure static options
@@ -430,9 +444,15 @@ bool JustWifi::_doAP() {
     }
 
     _doCallback(MESSAGE_ACCESSPOINT_CREATING);
-
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        WiFi.mode(WIFI_AP_STA);
+    } else {
+        WiFi.mode(WIFI_AP);
+    }
+    
     WiFi.enableAP(true);
-
+    
     // Configure static options
     if (_softap.dhcp) {
         WiFi.softAPConfig(_softap.ip, _softap.gw, _softap.netmask);
@@ -448,6 +468,60 @@ bool JustWifi::_doAP() {
 
     _ap_connected = true;
     return true;
+
+}
+
+uint8_t JustWifi::_doScan() {
+
+    static bool scanning = false;
+
+    // If not scanning, start scan
+    if (false == scanning) {
+        WiFi.disconnect();
+        // Serial.println("[DEBUGGG] DoScan has beed called");
+        WiFi.enableSTA(true);
+        WiFi.scanNetworks(true, true);
+        _doCallback(MESSAGE_SCANNING);
+        scanning = true;
+        return RESPONSE_WAIT;
+    }
+
+    // Check if scanning
+    int8_t scanResult = WiFi.scanComplete();
+    if (WIFI_SCAN_RUNNING == scanResult) {
+        return RESPONSE_WAIT;
+    }
+
+    // Scan finished
+    scanning = false;
+
+    // Sometimes the scan fails,
+    // this will force the scan to restart
+    if (WIFI_SCAN_FAILED == scanResult) {
+        _doCallback(MESSAGE_SCAN_FAILED);
+        return RESPONSE_WAIT;
+    }
+
+    // Check networks
+    if (0 == scanResult) {
+        _doCallback(MESSAGE_NO_NETWORKS);
+        return RESPONSE_FAIL;
+    }
+
+    // Populate network list
+    uint8_t count = _populate(scanResult);
+
+    // Free memory
+    WiFi.scanDelete();
+
+    if (0 == count) {
+        _doCallback(MESSAGE_NO_KNOWN_NETWORKS);
+        return RESPONSE_FAIL;
+    }
+
+    // Sort networks by RSSI
+    _currentID = _sortByRSSI();
+    return RESPONSE_OK;
 
 }
 
@@ -468,6 +542,9 @@ void JustWifi::subscribe(TMessageFunction fn) {
 // -----------------------------------------------------------------------------
 // STATE MACHINE
 // -----------------------------------------------------------------------------
+// void JustWifi::_overRideConnecting(bool connecting){
+//     _connecting = connecting;
+// }
 
 void JustWifi::_machine() {
 
@@ -494,6 +571,10 @@ void JustWifi::_machine() {
                             _currentID = 0;
                             _state = _scan ? STATE_SCAN_START : STATE_STA_START;
                             return;
+                        }
+                    }else{
+                        if(!_ap_connected && _ap_fallback_no_network_enabled){
+                            _state = STATE_FALLBACK_NO_NETWORK;
                         }
                     }
                 }
@@ -644,19 +725,30 @@ void JustWifi::_machine() {
         #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
 
         case STATE_SMARTCONFIG_START:
+            {
+                _doCallback(MESSAGE_SMARTCONFIG_START);
 
-            _doCallback(MESSAGE_SMARTCONFIG_START);
+                enableAP(false);
 
-            enableAP(false);
+                bool success = false;
+                
+                #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
+                if(smartConfigCallback){   
+                    success = WiFi.beginSmartConfig(smartConfigCallback);
+                }else
+                #endif
 
-            if (!WiFi.beginSmartConfig()) {
-                _state = STATE_SMARTCONFIG_FAILED;
-                return;
+                {
+                    success = WiFi.beginSmartConfig();
+                }
+                if (!success) {
+                    _state = STATE_SMARTCONFIG_FAILED;
+                    return;
+                }
+
+                _state = STATE_SMARTCONFIG_ONGOING;
+                _start = millis();
             }
-
-            _state = STATE_SMARTCONFIG_ONGOING;
-            _start = millis();
-
             break;
 
         case STATE_SMARTCONFIG_ONGOING:
@@ -689,6 +781,11 @@ void JustWifi::_machine() {
             _timeout = millis();
             _state = STATE_IDLE;
             break;
+        case STATE_FALLBACK_NO_NETWORK:
+            if(!_ap_connected) _doAP();
+            _timeout = millis();
+            _state = STATE_IDLE;
+            break;
 
         default:
             _state = STATE_IDLE;
@@ -718,7 +815,9 @@ bool JustWifi::addNetwork(
     const char * gw,
     const char * netmask,
     const char * dns,
-    bool front
+    bool front,
+    const char * enterprise_username,
+    const char * enterprise_password
 ) {
 
     network_t new_network;
@@ -761,6 +860,10 @@ bool JustWifi::addNetwork(
     }
     if (dns && *dns != 0x00) {
         new_network.dns.fromString(dns);
+    }
+    if (enterprise_username && enterprise_password && *enterprise_username != 0x00 && *enterprise_password != 0x00) {
+        new_network.enterprise_username = strdup(enterprise_username);
+        new_network.enterprise_password = strdup(enterprise_password);
     }
 
     // Defaults
@@ -808,6 +911,7 @@ bool JustWifi::setSoftAP(
     }
 
     // Copy network SSID
+    if (_softap.ssid) free(_softap.ssid);
     _softap.ssid = strdup(ssid);
     if (!_softap.ssid) {
         return false;
@@ -815,6 +919,7 @@ bool JustWifi::setSoftAP(
 
     // Copy network PASS
     if (pass && *pass != 0x00) {
+        if (_softap.pass) free(_softap.pass);
         _softap.pass = strdup(pass);
         if (!_softap.pass) {
             _softap.ssid = NULL;
@@ -874,7 +979,9 @@ bool JustWifi::connectable() {
 void JustWifi::disconnect() {
     _timeout = 0;
     WiFi.disconnect();
-    WiFi.enableSTA(false);
+    // _overRideConnecting(false);
+    WiFi.enableSTA(false); // TODO: Need to check the effect of this function
+     _state = STATE_IDLE;
     _doCallback(MESSAGE_DISCONNECTED);
 }
 
@@ -883,6 +990,7 @@ void JustWifi::turnOff() {
     WiFi.disconnect();
     WiFi.enableAP(false);
     WiFi.enableSTA(false);
+     // WiFi.mode(WIFI_OFF);
     #if defined(ARDUINO_ARCH_ESP8266)
         WiFi.forceSleepBegin();
     #endif
@@ -902,10 +1010,24 @@ void JustWifi::turnOn() {
     delay(1);
 
     setReconnectTimeout(0);
+    _doCallback(MESSAGE_TURNING_ON);
+    WiFi.enableSTA(true);
+    WiFi.mode(WIFI_STA);
     _sta_enabled = true;
     _state = STATE_IDLE;
     _doCallback(MESSAGE_TURNING_ON);
 
+#if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
+
+#if defined(SMARTCONFIG_CALLBACK_SUPPORT)
+void JustWifi::startSmartConfig(sc_callback_t callback) {
+    smartConfigCallback = callback;
+    startSmartConfig();
+}
+#endif
+
+void JustWifi::startSmartConfig() {
+    _state = STATE_SMARTCONFIG_START;
 }
 
 void JustWifi::enableSTA(bool enabled) {
@@ -926,6 +1048,11 @@ void JustWifi::enableAP(bool enabled) {
 void JustWifi::enableAPFallback(bool enabled) {
     _ap_fallback_enabled = enabled;
 }
+
+void JustWifi::enableAPFallbackNonetwork(bool enabled) {
+    _ap_fallback_no_network_enabled = enabled;
+}
+
 
 void JustWifi::enableScan(bool scan) {
     _scan = scan;

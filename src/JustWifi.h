@@ -38,9 +38,15 @@ extern "C" {
 #endif
 
 
-#define DEFAULT_CONNECT_TIMEOUT         20000
+// Check NO_EXTRA_4K_HEAP build flag in SDK 2.4.2
+#include <core_version.h>
+#if defined(JUSTWIFI_ENABLE_WPS) && defined(ARDUINO_ESP8266_RELEASE_2_4_2) && not defined(NO_EXTRA_4K_HEAP)
+    #error "SDK 2.4.2 has WPS support disabled by default, enable it by adding -DNO_EXTRA_4K_HEAP to your build flags"
+#endif
+
+#define DEFAULT_CONNECT_TIMEOUT         10000
 #define DEFAULT_RECONNECT_INTERVAL      60000
-#define JUSTWIFI_SMARTCONFIG_TIMEOUT    60000
+#define JUSTWIFI_SMARTCONFIG_TIMEOUT    300000 // 5 Minutes
 
 #ifdef DEBUG_ESP_WIFI
 #ifdef DEBUG_ESP_PORT
@@ -66,6 +72,8 @@ typedef struct {
     uint8_t channel;
     uint8_t bssid[6];
     uint8_t next;
+    char * enterprise_username;
+    char * enterprise_password;
 } network_t;
 
 typedef enum {
@@ -84,7 +92,8 @@ typedef enum {
     STATE_SMARTCONFIG_ONGOING,
     STATE_SMARTCONFIG_FAILED,
     STATE_SMARTCONFIG_SUCCESS,
-    STATE_FALLBACK
+    STATE_FALLBACK,
+    STATE_FALLBACK_NO_NETWORK
 } justwifi_states_t;
 
 typedef enum {
@@ -138,7 +147,9 @@ class JustWifi {
             const char * gw = NULL,
             const char * netmask = NULL,
             const char * dns = NULL,
-            bool front = false
+            bool front = false,
+            const char * enterprise_username = NULL,
+            const char * enterprise_password = NULL
         );
         bool setSoftAP(
             const char * ssid,
@@ -164,6 +175,7 @@ class JustWifi {
         void enableSTA(bool enabled);
         void enableAP(bool enabled);
         void enableAPFallback(bool enabled);
+        void enableAPFallbackNonetwork(bool enable);
 
         #if defined(JUSTWIFI_ENABLE_WPS)
             void startWPS();
@@ -171,6 +183,9 @@ class JustWifi {
 
         #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
             void startSmartConfig();
+            #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
+            void startSmartConfig(sc_callback_t callback);
+            #endif
         #endif
 
         void init();
@@ -196,18 +211,24 @@ class JustWifi {
         bool _sta_enabled = true;
         bool _ap_connected = false;
         bool _ap_fallback_enabled = true;
+        bool _ap_fallback_no_network_enabled = false;
 
         bool _doAP();
         uint8_t _doScan();
         uint8_t _doSTA(uint8_t id = 0xFF);
 
-        void _esp8266_153_reset();
+        void _disable(bool force);
         void _machine();
         uint8_t _populate(uint8_t networkCount);
         uint8_t _sortByRSSI();
         String _MAC2String(const unsigned char* mac);
         String _encodingString(uint8_t security);
         void _doCallback(justwifi_messages_t message, char * parameter = NULL);
+        #if defined(JUSTWIFI_ENABLE_SMARTCONFIG)
+        #if defined(SMARTCONFIG_CALLBACK_SUPPORT)
+        sc_callback_t smartConfigCallback;
+        #endif
+        #endif
 
 };
 
